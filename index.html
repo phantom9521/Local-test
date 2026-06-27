@@ -5,57 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>String Art Generator</title>
     <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            text-align: center;
-            background: #f4f4f9;
-            color: #333;
-            margin: 0;
-            padding: 20px;
-        }
-        h1 { margin-bottom: 5px; }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        canvas {
-            border: 1px solid #ddd;
-            border-radius: 50%;
-            margin: 20px auto;
-            background: #fff;
-            max-width: 100%;
-            height: auto;
-            display: block;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-        }
-        .controls {
-            margin: 20px 0;
-            display: flex;
-            justify-content: center;
-            gap: 10px;
-            flex-wrap: wrap;
-        }
-        button, label.upload-btn {
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-            border: none;
-            background: #2c3e50;
-            color: white;
-            border-radius: 6px;
-            transition: background 0.2s;
-            display: inline-block;
-        }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #f4f4f9; color: #333; margin: 0; padding: 20px; }
+        .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        canvas { border: 1px solid #ddd; border-radius: 50%; margin: 20px auto; background: #fff; max-width: 100%; height: auto; display: block; }
+        .controls, .settings { margin: 20px 0; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; align-items: center;}
+        .settings { background: #eee; padding: 15px; border-radius: 8px; font-size: 14px;}
+        .settings label { margin-right: 15px; font-weight: bold;}
+        .settings input { width: 60px; padding: 5px; margin-left: 5px;}
+        button, label.upload-btn { padding: 10px 20px; font-size: 16px; cursor: pointer; border: none; background: #2c3e50; color: white; border-radius: 6px; }
         button:hover, label.upload-btn:hover { background: #34495e; }
         button:disabled { background: #95a5a6; cursor: not-allowed; }
         input[type="file"] { display: none; }
         #status { font-weight: bold; color: #e74c3c; margin: 10px 0; }
-        
-        /* Hidden canvas used for reading image data */
+        .instruction-box { background: #dff9fb; padding: 15px; border-radius: 8px; margin: 10px 0; font-size: 18px; border: 2px solid #c7ecee;}
         #processingCanvas { display: none; }
     </style>
 </head>
@@ -63,66 +25,82 @@
 
 <div class="container">
     <h1>String Art Generator</h1>
-    <p>Upload an image to generate the thread pattern.</p>
+    
+    <div class="settings">
+        <label>Total Nails: <input type="number" id="numNails" value="250"></label>
+        <label>Total Lines: <input type="number" id="numLines" value="2500"></label>
+        <label>Line Weight (1-50): <input type="number" id="lineWeight" value="20"></label>
+        <label>Canvas Diameter (cm): <input type="number" id="canvasSize" value="50" onchange="calculateSpacing()"></label>
+    </div>
+    
+    <div id="physical-params" style="font-weight: bold; color: #27ae60;"></div>
 
     <div class="controls">
-        <label class="upload-btn">
-            Upload Image
-            <input type="file" id="imageLoader" accept="image/*">
-        </label>
+        <label class="upload-btn">Upload Image<input type="file" id="imageLoader" accept="image/*"></label>
         <button id="btnNext" onclick="drawNextString()" disabled>Next Step</button>
         <button id="btnAuto" onclick="toggleAutoPlay()" disabled>Auto Play</button>
         <button id="btnReset" onclick="resetCanvas()" disabled>Reset</button>
     </div>
 
-    <div id="status">Waiting for image upload...</div>
-    <h3 id="step-counter">Step: 0</h3>
+    <div id="status">Waiting for image upload... (Use an image with NO background!)</div>
+    
+    <div class="instruction-box">
+        <div id="step-counter" style="font-weight:bold; margin-bottom:5px;">Step: 0 of 0</div>
+        <div id="instruction-text">Upload an image to get nail instructions.</div>
+    </div>
 
     <canvas id="artCanvas" width="600" height="600"></canvas>
-    
     <canvas id="processingCanvas" width="600" height="600"></canvas>
 </div>
 
 <script>
     const IMG_SIZE = 600;
     const RADIUS = IMG_SIZE / 2;
-    const NUM_NAILS = 250;
-    const NUM_LINES = 2500;
-    const LINE_WEIGHT = 20; 
-
     let sequence = [];
     let currentStep = 0;
     let playInterval = null;
     let nails = [];
+    let NUM_NAILS, NUM_LINES, LINE_WEIGHT;
 
     const artCanvas = document.getElementById("artCanvas");
     const artCtx = artCanvas.getContext("2d");
     const procCanvas = document.getElementById("processingCanvas");
     const procCtx = procCanvas.getContext("2d");
 
-    // 1. Calculate Nail Coordinates
-    for (let i = 0; i < NUM_NAILS; i++) {
-        let angle = i * (2 * Math.PI / NUM_NAILS);
-        let x = Math.round(RADIUS + RADIUS * Math.cos(angle));
-        let y = Math.round(RADIUS + RADIUS * Math.sin(angle));
-        // Keep inside bounds
-        x = Math.max(0, Math.min(IMG_SIZE - 1, x));
-        y = Math.max(0, Math.min(IMG_SIZE - 1, y));
-        nails.push({x, y});
+    function calculateSpacing() {
+        let size = document.getElementById("canvasSize").value;
+        let nNails = document.getElementById("numNails").value;
+        // Spacing = (Pi * Diameter) / Number of Nails
+        let spacing = (Math.PI * size) / nNails;
+        document.getElementById("physical-params").innerText = 
+            `Physical Setup: ${nNails} nails. Space between each nail: ${spacing.toFixed(2)} cm.`;
     }
+    
+    // Run this once on load
+    calculateSpacing();
 
-    // 2. Handle Image Upload
     document.getElementById('imageLoader').addEventListener('change', function(e){
+        // Grab values from UI
+        NUM_NAILS = parseInt(document.getElementById("numNails").value);
+        NUM_LINES = parseInt(document.getElementById("numLines").value);
+        LINE_WEIGHT = parseInt(document.getElementById("lineWeight").value);
+        
+        nails = [];
+        for (let i = 0; i < NUM_NAILS; i++) {
+            let angle = i * (2 * Math.PI / NUM_NAILS);
+            let x = Math.round(RADIUS + RADIUS * Math.cos(angle));
+            let y = Math.round(RADIUS + RADIUS * Math.sin(angle));
+            nails.push({x: Math.max(0, Math.min(IMG_SIZE - 1, x)), y: Math.max(0, Math.min(IMG_SIZE - 1, y))});
+        }
+        
+        calculateSpacing();
+
         const reader = new FileReader();
         reader.onload = function(event){
             const img = new Image();
             img.onload = function(){
-                document.getElementById("status").innerText = "Processing image... this may take a few seconds.";
-                
-                // Allow UI to update before heavy calculation
-                setTimeout(() => {
-                    processImage(img);
-                }, 100);
+                document.getElementById("status").innerText = "Crunching the math... give it a few seconds.";
+                setTimeout(() => { processImage(img); }, 100);
             }
             img.src = event.target.result;
         }
@@ -130,46 +108,35 @@
     });
 
     function processImage(img) {
-        // Draw image to hidden canvas, stretched to fill
         procCtx.fillStyle = 'white';
         procCtx.fillRect(0, 0, IMG_SIZE, IMG_SIZE);
         procCtx.drawImage(img, 0, 0, IMG_SIZE, IMG_SIZE);
-        
         let imgData = procCtx.getImageData(0, 0, IMG_SIZE, IMG_SIZE);
         let data = imgData.data;
 
-        // Grayscale, Invert, and Mask to Circle
         for (let y = 0; y < IMG_SIZE; y++) {
             for (let x = 0; x < IMG_SIZE; x++) {
                 let idx = (y * IMG_SIZE + x) * 4;
-                let dx = x - RADIUS;
-                let dy = y - RADIUS;
-                
-                // If outside circle, make it black (0 value for algorithm)
+                let dx = x - RADIUS, dy = y - RADIUS;
                 if (dx*dx + dy*dy > RADIUS*RADIUS) {
                     data[idx] = data[idx+1] = data[idx+2] = 0;
                 } else {
-                    // Convert to grayscale and invert (dark pixels become bright)
                     let avg = 0.299 * data[idx] + 0.587 * data[idx+1] + 0.114 * data[idx+2];
-                    let inverted = 255 - avg;
-                    data[idx] = data[idx+1] = data[idx+2] = inverted;
+                    data[idx] = data[idx+1] = data[idx+2] = 255 - avg;
                 }
-                data[idx+3] = 255; // Alpha
+                data[idx+3] = 255; 
             }
         }
-        
         runGreedyAlgorithm(data);
     }
 
-    // Bresenham's line algorithm to find pixels between two points
     function getLinePixels(x0, y0, x1, y1) {
         let pixels = [];
         let dx = Math.abs(x1 - x0), sx = x0 < x1 ? 1 : -1;
         let dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
         let err = dx + dy, e2;
-
         while (true) {
-            pixels.push((y0 * IMG_SIZE + x0) * 4); // Store the index for the R channel in the 1D array
+            pixels.push((y0 * IMG_SIZE + x0) * 4);
             if (x0 === x1 && y0 === y1) break;
             e2 = 2 * err;
             if (e2 >= dy) { err += dy; x0 += sx; }
@@ -179,13 +146,11 @@
     }
 
     function runGreedyAlgorithm(pixelData) {
-        // Precompute all possible lines between nails for speed
         const lineCache = Array(NUM_NAILS).fill(null).map(() => Array(NUM_NAILS).fill(null));
         for(let i=0; i<NUM_NAILS; i++) {
             for(let j=i+1; j<NUM_NAILS; j++) {
                 let p = getLinePixels(nails[i].x, nails[i].y, nails[j].x, nails[j].y);
-                lineCache[i][j] = p;
-                lineCache[j][i] = p;
+                lineCache[i][j] = p; lineCache[j][i] = p;
             }
         }
 
@@ -193,38 +158,24 @@
         let currentNail = 0;
 
         for (let step = 0; step < NUM_LINES; step++) {
-            let bestNail = -1;
-            let maxScore = -1;
-
+            let bestNail = -1, maxScore = -1;
             for (let nextNail = 0; nextNail < NUM_NAILS; nextNail++) {
                 if (nextNail === currentNail) continue;
-                
                 let pixels = lineCache[currentNail][nextNail];
                 let score = 0;
-                
-                for (let i = 0; i < pixels.length; i++) {
-                    score += pixelData[pixels[i]]; 
-                }
-
-                if (score > maxScore) {
-                    maxScore = score;
-                    bestNail = nextNail;
-                }
+                for (let i = 0; i < pixels.length; i++) score += pixelData[pixels[i]]; 
+                if (score > maxScore) { maxScore = score; bestNail = nextNail; }
             }
-
             sequence.push(bestNail);
-
-            // Subtract the line from the image
             let bestPixels = lineCache[currentNail][bestNail];
             for (let i = 0; i < bestPixels.length; i++) {
                 let idx = bestPixels[i];
                 pixelData[idx] = Math.max(0, pixelData[idx] - LINE_WEIGHT);
             }
-
             currentNail = bestNail;
         }
 
-        document.getElementById("status").innerText = "Processing Complete! Click Auto Play to view.";
+        document.getElementById("status").innerText = "Math complete! Check settings or start animation.";
         document.getElementById("btnNext").disabled = false;
         document.getElementById("btnAuto").disabled = false;
         document.getElementById("btnReset").disabled = false;
@@ -236,7 +187,8 @@
         playInterval = null;
         artCtx.clearRect(0, 0, IMG_SIZE, IMG_SIZE);
         currentStep = 0;
-        document.getElementById("step-counter").innerText = `Step: 0`;
+        document.getElementById("step-counter").innerText = `Step: 0 of ${sequence.length - 1}`;
+        document.getElementById("instruction-text").innerText = "Ready to start.";
         document.getElementById("btnAuto").innerText = "Auto Play";
     }
 
@@ -259,6 +211,7 @@
 
         currentStep++;
         document.getElementById("step-counter").innerText = `Step: ${currentStep} of ${sequence.length - 1}`;
+        document.getElementById("instruction-text").innerText = `Tie thread from NAIL ${startNail} ➔ to NAIL ${endNail}`;
     }
 
     function toggleAutoPlay() {
@@ -267,11 +220,11 @@
             playInterval = null;
             document.getElementById("btnAuto").innerText = "Auto Play";
         } else {
-            playInterval = setInterval(drawNextString, 15); // Draw line every 15ms
+            playInterval = setInterval(drawNextString, 15);
             document.getElementById("btnAuto").innerText = "Pause";
         }
     }
 </script>
-
 </body>
 </html>
+
