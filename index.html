@@ -3,22 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>String Art Generator</title>
+    <title>String Art Generator PRO</title>
     <style>
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; background: #f4f4f9; color: #333; margin: 0; padding: 20px; }
         .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        canvas { border: 1px solid #ddd; border-radius: 50%; margin: 20px auto; background: #fff; max-width: 100%; height: auto; display: block; }
+        canvas { border: 1px solid #ddd; border-radius: 12px; margin: 20px auto; background: #fff; max-width: 100%; height: auto; display: block; }
         .controls, .settings { margin: 20px 0; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; align-items: center;}
         .settings { background: #eee; padding: 15px; border-radius: 8px; font-size: 14px;}
         .settings label { margin-right: 15px; font-weight: bold;}
-        .settings input { width: 60px; padding: 5px; margin-left: 5px;}
-        button, label.upload-btn { padding: 10px 20px; font-size: 16px; cursor: pointer; border: none; background: #2c3e50; color: white; border-radius: 6px; }
+        .settings input { width: 70px; padding: 5px; margin-left: 5px; border: 1px solid #ccc; border-radius: 4px;}
+        button, label.upload-btn { padding: 10px 20px; font-size: 16px; cursor: pointer; border: none; background: #2c3e50; color: white; border-radius: 6px; font-weight: bold;}
         button:hover, label.upload-btn:hover { background: #34495e; }
         button:disabled { background: #95a5a6; cursor: not-allowed; }
         input[type="file"] { display: none; }
         #status { font-weight: bold; color: #e74c3c; margin: 10px 0; }
-        .instruction-box { background: #dff9fb; padding: 15px; border-radius: 8px; margin: 10px 0; font-size: 18px; border: 2px solid #c7ecee;}
+        .instruction-box { background: #dff9fb; padding: 20px; border-radius: 8px; margin: 10px 0; font-size: 22px; border: 2px solid #c7ecee;}
+        #step-counter { font-size: 16px; color: #535c68; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;}
         #processingCanvas { display: none; }
+        .highlight-nail { color: #eb4d4b; font-weight: 900; font-size: 28px; }
     </style>
 </head>
 <body>
@@ -27,35 +29,38 @@
     <h1>String Art Generator</h1>
     
     <div class="settings">
-        <label>Total Nails: <input type="number" id="numNails" value="250"></label>
-        <label>Total Lines: <input type="number" id="numLines" value="2500"></label>
+        <label>Total Nails: <input type="number" id="numNails" value="250" onchange="calculateSpacing()"></label>
+        <label>Total Lines (Threads): <input type="number" id="numLines" value="5000"></label>
         <label>Line Weight (1-50): <input type="number" id="lineWeight" value="20"></label>
-        <label>Canvas Diameter (cm): <input type="number" id="canvasSize" value="50" onchange="calculateSpacing()"></label>
+        <label>Board Diameter (cm): <input type="number" id="canvasSize" value="50" onchange="calculateSpacing()"></label>
     </div>
     
-    <div id="physical-params" style="font-weight: bold; color: #27ae60;"></div>
+    <div id="physical-params" style="font-weight: bold; color: #27ae60; margin-top: 10px; font-size: 18px;"></div>
 
     <div class="controls">
         <label class="upload-btn">Upload Image<input type="file" id="imageLoader" accept="image/*"></label>
         <button id="btnNext" onclick="drawNextString()" disabled>Next Step</button>
         <button id="btnAuto" onclick="toggleAutoPlay()" disabled>Auto Play</button>
-        <button id="btnReset" onclick="resetCanvas()" disabled>Reset</button>
+        <button id="btnReset" onclick="resetCanvas()" disabled>Reset Canvas</button>
     </div>
 
     <div id="status">Waiting for image upload... (Use an image with NO background!)</div>
     
     <div class="instruction-box">
-        <div id="step-counter" style="font-weight:bold; margin-bottom:5px;">Step: 0 of 0</div>
-        <div id="instruction-text">Upload an image to get nail instructions.</div>
+        <div id="step-counter">Step: 0 of 0</div>
+        <div id="instruction-text">Upload an image to get your thread path.</div>
     </div>
 
-    <canvas id="artCanvas" width="600" height="600"></canvas>
-    <canvas id="processingCanvas" width="600" height="600"></canvas>
+    <canvas id="artCanvas" width="660" height="660"></canvas>
+    <canvas id="processingCanvas" width="660" height="660"></canvas>
 </div>
 
 <script>
-    const IMG_SIZE = 600;
-    const RADIUS = IMG_SIZE / 2;
+    const CANVAS_SIZE = 660;
+    const CX = CANVAS_SIZE / 2;
+    const CY = CANVAS_SIZE / 2;
+    const RADIUS = 300; // Leaves 30px border for text
+    
     let sequence = [];
     let currentStep = 0;
     let playInterval = null;
@@ -70,36 +75,60 @@
     function calculateSpacing() {
         let size = document.getElementById("canvasSize").value;
         let nNails = document.getElementById("numNails").value;
-        // Spacing = (Pi * Diameter) / Number of Nails
         let spacing = (Math.PI * size) / nNails;
         document.getElementById("physical-params").innerText = 
-            `Physical Setup: ${nNails} nails. Space between each nail: ${spacing.toFixed(2)} cm.`;
+            `Physical Setup: ${nNails} nails. Space between each nail is ${spacing.toFixed(2)} cm.`;
     }
     
-    // Run this once on load
     calculateSpacing();
 
+    function drawNailsOnCanvas() {
+        artCtx.clearRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+        
+        artCtx.textAlign = "center";
+        artCtx.textBaseline = "middle";
+
+        for (let i = 0; i < nails.length; i++) {
+            // Draw a small red dot for every single nail
+            artCtx.beginPath();
+            artCtx.arc(nails[i].x, nails[i].y, 2, 0, Math.PI * 2);
+            artCtx.fillStyle = "#eb4d4b";
+            artCtx.fill();
+
+            // Draw numbers for every 10th nail so it doesn't get cluttered
+            if (i % 10 === 0) {
+                let textX = CX + (RADIUS + 20) * Math.cos(nails[i].angle);
+                let textY = CY + (RADIUS + 20) * Math.sin(nails[i].angle);
+                
+                artCtx.font = "bold 14px Arial";
+                artCtx.fillStyle = "#2c3e50";
+                artCtx.fillText(i, textX, textY);
+            }
+        }
+    }
+
     document.getElementById('imageLoader').addEventListener('change', function(e){
-        // Grab values from UI
         NUM_NAILS = parseInt(document.getElementById("numNails").value);
         NUM_LINES = parseInt(document.getElementById("numLines").value);
         LINE_WEIGHT = parseInt(document.getElementById("lineWeight").value);
         
         nails = [];
         for (let i = 0; i < NUM_NAILS; i++) {
-            let angle = i * (2 * Math.PI / NUM_NAILS);
-            let x = Math.round(RADIUS + RADIUS * Math.cos(angle));
-            let y = Math.round(RADIUS + RADIUS * Math.sin(angle));
-            nails.push({x: Math.max(0, Math.min(IMG_SIZE - 1, x)), y: Math.max(0, Math.min(IMG_SIZE - 1, y))});
+            // -Math.PI / 2 shifts the starting point to exactly 12 o'clock (top)
+            let angle = i * (2 * Math.PI / NUM_NAILS) - (Math.PI / 2);
+            let x = Math.round(CX + RADIUS * Math.cos(angle));
+            let y = Math.round(CY + RADIUS * Math.sin(angle));
+            nails.push({x: x, y: y, angle: angle});
         }
         
         calculateSpacing();
+        drawNailsOnCanvas();
 
         const reader = new FileReader();
         reader.onload = function(event){
             const img = new Image();
             img.onload = function(){
-                document.getElementById("status").innerText = "Crunching the math... give it a few seconds.";
+                document.getElementById("status").innerText = "Crunching the math... this will take a few seconds for 5000 lines!";
                 setTimeout(() => { processImage(img); }, 100);
             }
             img.src = event.target.result;
@@ -109,20 +138,24 @@
 
     function processImage(img) {
         procCtx.fillStyle = 'white';
-        procCtx.fillRect(0, 0, IMG_SIZE, IMG_SIZE);
-        procCtx.drawImage(img, 0, 0, IMG_SIZE, IMG_SIZE);
-        let imgData = procCtx.getImageData(0, 0, IMG_SIZE, IMG_SIZE);
+        procCtx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+        
+        // Draw image centered inside the nail radius
+        procCtx.drawImage(img, CX - RADIUS, CY - RADIUS, RADIUS * 2, RADIUS * 2);
+        
+        let imgData = procCtx.getImageData(0, 0, CANVAS_SIZE, CANVAS_SIZE);
         let data = imgData.data;
 
-        for (let y = 0; y < IMG_SIZE; y++) {
-            for (let x = 0; x < IMG_SIZE; x++) {
-                let idx = (y * IMG_SIZE + x) * 4;
-                let dx = x - RADIUS, dy = y - RADIUS;
+        for (let y = 0; y < CANVAS_SIZE; y++) {
+            for (let x = 0; x < CANVAS_SIZE; x++) {
+                let idx = (y * CANVAS_SIZE + x) * 4;
+                let dx = x - CX, dy = y - CY;
+                
                 if (dx*dx + dy*dy > RADIUS*RADIUS) {
-                    data[idx] = data[idx+1] = data[idx+2] = 0;
+                    data[idx] = data[idx+1] = data[idx+2] = 0; // Black out outside the circle
                 } else {
                     let avg = 0.299 * data[idx] + 0.587 * data[idx+1] + 0.114 * data[idx+2];
-                    data[idx] = data[idx+1] = data[idx+2] = 255 - avg;
+                    data[idx] = data[idx+1] = data[idx+2] = 255 - avg; // Invert colors
                 }
                 data[idx+3] = 255; 
             }
@@ -136,7 +169,7 @@
         let dy = -Math.abs(y1 - y0), sy = y0 < y1 ? 1 : -1;
         let err = dx + dy, e2;
         while (true) {
-            pixels.push((y0 * IMG_SIZE + x0) * 4);
+            pixels.push((y0 * CANVAS_SIZE + x0) * 4);
             if (x0 === x1 && y0 === y1) break;
             e2 = 2 * err;
             if (e2 >= dy) { err += dy; x0 += sx; }
@@ -175,7 +208,7 @@
             currentNail = bestNail;
         }
 
-        document.getElementById("status").innerText = "Math complete! Check settings or start animation.";
+        document.getElementById("status").innerText = "Success! Math complete. Follow the instructions below.";
         document.getElementById("btnNext").disabled = false;
         document.getElementById("btnAuto").disabled = false;
         document.getElementById("btnReset").disabled = false;
@@ -185,7 +218,7 @@
     function resetCanvas() {
         if(playInterval) clearInterval(playInterval);
         playInterval = null;
-        artCtx.clearRect(0, 0, IMG_SIZE, IMG_SIZE);
+        drawNailsOnCanvas(); // Redraw the blank board with numbers
         currentStep = 0;
         document.getElementById("step-counter").innerText = `Step: 0 of ${sequence.length - 1}`;
         document.getElementById("instruction-text").innerText = "Ready to start.";
@@ -205,13 +238,16 @@
         artCtx.beginPath();
         artCtx.moveTo(nails[startNail].x, nails[startNail].y);
         artCtx.lineTo(nails[endNail].x, nails[endNail].y);
-        artCtx.strokeStyle = "rgba(0, 0, 0, 0.25)"; 
+        artCtx.strokeStyle = "rgba(0, 0, 0, 0.15)"; // Even lighter thread because we have 5000 of them now!
         artCtx.lineWidth = 0.5;
         artCtx.stroke();
 
         currentStep++;
         document.getElementById("step-counter").innerText = `Step: ${currentStep} of ${sequence.length - 1}`;
-        document.getElementById("instruction-text").innerText = `Tie thread from NAIL ${startNail} ➔ to NAIL ${endNail}`;
+        
+        // BIG visually distinct instructions!
+        document.getElementById("instruction-text").innerHTML = 
+            `Run thread to <span class="highlight-nail">NAIL ${endNail}</span>`;
     }
 
     function toggleAutoPlay() {
@@ -220,11 +256,13 @@
             playInterval = null;
             document.getElementById("btnAuto").innerText = "Auto Play";
         } else {
-            playInterval = setInterval(drawNextString, 15);
+            // Speed up the auto-play since there are 5000 lines!
+            playInterval = setInterval(drawNextString, 5); 
             document.getElementById("btnAuto").innerText = "Pause";
         }
     }
 </script>
 </body>
-</html>
+    </html>
+    
 
